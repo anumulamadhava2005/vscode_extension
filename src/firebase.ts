@@ -1,8 +1,8 @@
-import firebase from "firebase/compat/app";
 import { getAuth, signInWithEmailAndPassword } from "firebase/auth";
 import { getFirestore, collection, doc, getDocs, setDoc, query, where, addDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage"; // 🔹 Added storage imports
 import { getApps, initializeApp } from "firebase/app";
+import QRCode from 'qrcode';
 
 // 🔹 Replace this with your actual Firebase config
 const firebaseConfig = {
@@ -36,6 +36,16 @@ export async function loginUser(email: string, password: string) {
   }
 }
 
+export async function generateQR(text: string): Promise<string | null> {
+  try {
+    const qrCodeDataUrl = await QRCode.toDataURL(text);
+    return qrCodeDataUrl;
+  } catch (error) {
+    console.error("Error generating QR code:", error);
+    return null;
+  }
+}
+
 export async function getFriends(userId: string) {
   const friendsRef = collection(doc(db, "usersList", userId), "Chats");
   try {
@@ -65,7 +75,7 @@ export async function shareCode(senderId: string, recipient: string, content: st
       const sharedSnippetRef2 = collection(doc(collection(doc(db, "usersList", recipientId), 'Chats'), senderId), 'messages');
 
       // Add message
-      await addDoc(sharedSnippetRef, {
+      const docRef1 = await addDoc(sharedSnippetRef, {
           sender: senderId,
           recipient: recipientId,
           text: "",
@@ -76,7 +86,7 @@ export async function shareCode(senderId: string, recipient: string, content: st
           chat: recipientSnapshot.docs[0].data()
       });
 
-      await addDoc(sharedSnippetRef2, {
+      const docRef2 = await addDoc(sharedSnippetRef2, {
           sender: senderId,
           recipient: recipientId,
           text: "",
@@ -93,7 +103,7 @@ export async function shareCode(senderId: string, recipient: string, content: st
       await updateDoc(chatRef1, { timeStamp: serverTimestamp() });
       await updateDoc(chatRef2, { timeStamp: serverTimestamp() });
 
-      return true;
+      return docRef1.id;
   } catch (error) {
       console.error("Error sharing content:", error);
       return false;
