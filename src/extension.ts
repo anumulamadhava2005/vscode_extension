@@ -6,7 +6,7 @@ import { listenToCodeSnippets, stopListeningToMessages } from "./listenToCodeSni
 export async function activate(context: vscode.ExtensionContext) {
 	console.log("Mint-Share Extension Activated!");
 
-	let autoUser = await tryAutoLogin(context);
+	const autoUser = await tryAutoLogin(context);
 	if (autoUser) {
 		vscode.window.showInformationMessage(`👋 Welcome back, ${autoUser.email}`);
 	}
@@ -249,26 +249,12 @@ export async function activate(context: vscode.ExtensionContext) {
 		}
 	});
 
-	let logoutDisposable = vscode.commands.registerCommand("mint.logout", async () => {
-		try {
-			await context.secrets.delete("mint_email");
-			await context.secrets.delete("mint_password");
-			logoutUser();
-			autoUser=null;
-			stopListeningToMessages?.();
-		} catch (error) {
-
-		}
-	});
-
 
 	context.subscriptions.push(shareFileDisposable);
 
 	context.subscriptions.push(shareDisposable);
 
 	context.subscriptions.push(disposable);
-
-	context.subscriptions.push(logoutDisposable);
 }
 
 async function tryAutoLogin(context: vscode.ExtensionContext) {

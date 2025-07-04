@@ -15,8 +15,7 @@
   "activationEvents": [
     "onCommand:mint.shareCode",
     "onCommand:mint.shareFile",
-    "onCommand:mint.share",
-    "onCommand:mint.logout"
+    "onCommand:mint.share"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -32,10 +31,6 @@
       {
         "command": "mint.share",
         "title": "Mint-Share: Share a file in explorer"
-      },
-      {
-        "command": "mint.logout",
-        "title": "Mint-share: Logout"
       }
     ],
     "menus": {
