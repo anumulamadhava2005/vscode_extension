@@ -1,14 +1,22 @@
 import * as vscode from "vscode";
-import { loginUser, getFriends, shareCode, uploadFile, shareFile, generateQR, postCode, db } from "./firebase";
+import { loginUser, getFriends, shareCode, uploadFile, shareFile, generateQR, postCode, db, logoutUser } from "./firebase";
 import { collection, getDocs, query, where } from "firebase/firestore";
+import { listenToCodeSnippets, stopListeningToMessages } from "./listenToCodeSnippet";
 
 export async function activate(context: vscode.ExtensionContext) {
 	console.log("Mint-Share Extension Activated!");
 
-	const autoUser = await tryAutoLogin(context);
+	let autoUser = await tryAutoLogin(context);
 	if (autoUser) {
 		vscode.window.showInformationMessage(`👋 Welcome back, ${autoUser.email}`);
 	}
+	if (autoUser && autoUser.email) {
+		const userDetails = await fetchUserDetails(autoUser.email);
+		if (userDetails?.username) {
+			listenToCodeSnippets(userDetails.username);
+		}
+	}
+
 	let disposable = vscode.commands.registerCommand("mint.shareCode", async () => {
 		try {
 			vscode.window.showInformationMessage("Mint-Share: Preparing to share your code...");
@@ -29,6 +37,10 @@ export async function activate(context: vscode.ExtensionContext) {
 				// Store credentials locally
 				await context.secrets.store("mint_email", email);
 				await context.secrets.store("mint_password", password);
+				const userDetails = await fetchUserDetails(email);
+				if (userDetails?.username) {
+					listenToCodeSnippets(userDetails.username);
+				}
 			}
 
 			// Step 3: Get active code selection
@@ -173,11 +185,90 @@ export async function activate(context: vscode.ExtensionContext) {
 		}
 	});
 
+	let shareDisposable = vscode.commands.registerCommand("mint.share", async (fileUri: vscode.Uri) => {
+		try {
+			vscode.window.showInformationMessage("Mint-Share: Preparing to share your file...");
+
+			// 🔹 Skip the file picker — fileUri is the clicked file
+			if (!fileUri) {
+				return vscode.window.showErrorMessage("No file selected.");
+			}
+
+			const filePath = fileUri.fsPath;
+			const fileBuffer = await vscode.workspace.fs.readFile(fileUri);
+
+			// 🔐 Auto-login or prompt
+			let user = autoUser;
+			if (!user) {
+				// Step 1: Get user input (email & password)
+				const email = await vscode.window.showInputBox({ prompt: "Enter your email" });
+				if (!email) { return vscode.window.showErrorMessage("Login canceled."); }
+
+				const password = await vscode.window.showInputBox({ prompt: "Enter your password", password: true });
+				if (!password) { return vscode.window.showErrorMessage("Login canceled."); }
+
+				// Step 2: Authenticate user
+				vscode.window.showInformationMessage("🔐 Logging in...");
+				user = await loginUser(email, password);
+				if (!user) { return vscode.window.showErrorMessage("Authentication failed."); }
+
+				// Store credentials locally
+				await context.secrets.store("mint_email", email);
+				await context.secrets.store("mint_password", password);
+			}
+
+			const userDetails = await fetchUserDetails(user.email || "");
+			if (!userDetails?.username) {
+				return vscode.window.showErrorMessage("Could not fetch user details.");
+			}
+
+			// 👥 Select a friend
+			const friends = await getFriends(userDetails.username);
+			if (!friends.length) {
+				return vscode.window.showErrorMessage("No friends found.");
+			}
+
+			const selectedFriend = await vscode.window.showQuickPick(
+				friends.map(f => f.username),
+				{ placeHolder: "Select a friend to share your file with" }
+			);
+
+			if (!selectedFriend) { return; }
+
+			// 📤 Share file
+			const success = await shareFile(userDetails.username, selectedFriend, filePath, Buffer.from(fileBuffer));
+			if (success) {
+				vscode.window.showInformationMessage(`✅ File shared successfully with ${selectedFriend}!`);
+			} else {
+				vscode.window.showErrorMessage("❌ File sharing failed.");
+			}
+
+		} catch (error: any) {
+			console.error("🔥 Error:", error.message);
+			vscode.window.showErrorMessage(`❌ Error: ${error.message}`);
+		}
+	});
+
+	let logoutDisposable = vscode.commands.registerCommand("mint.logout", async () => {
+		try {
+			await context.secrets.delete("mint_email");
+			await context.secrets.delete("mint_password");
+			logoutUser();
+			autoUser=null;
+			stopListeningToMessages?.();
+		} catch (error) {
+
+		}
+	});
+
+
 	context.subscriptions.push(shareFileDisposable);
 
-
+	context.subscriptions.push(shareDisposable);
 
 	context.subscriptions.push(disposable);
+
+	context.subscriptions.push(logoutDisposable);
 }
 
 async function tryAutoLogin(context: vscode.ExtensionContext) {
@@ -199,8 +290,6 @@ async function tryAutoLogin(context: vscode.ExtensionContext) {
 	}
 	return user;
 }
-
-
 
 export async function fetchUserDetails(email: string) {
 	try {
@@ -224,8 +313,7 @@ export async function fetchUserDetails(email: string) {
 	}
 }
 
-
-
 export function deactivate() {
 	console.log("Mint-Share Extension Deactivated.");
+	stopListeningToMessages();
 }

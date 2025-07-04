@@ -1,5 +1,5 @@
-import { getAuth, signInWithEmailAndPassword, User } from "firebase/auth";
-import { getFirestore, collection, doc, getDocs, setDoc, query, where, addDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { getAuth, signInWithEmailAndPassword, signOut, User } from "firebase/auth";
+import { getFirestore, collection, doc, getDocs, setDoc, query, where, addDoc, updateDoc, serverTimestamp, getDoc } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage"; // 🔹 Added storage imports
 import { getApps, initializeApp } from "firebase/app";
 import QRCode from 'qrcode';
@@ -37,22 +37,11 @@ export async function loginUser(email: string, password: string) {
   }
 }
 
-export async function tryAutoLogin(): Promise<User | null> {
+export async function logoutUser() {
   try {
-    const secretStorage = vscode.extensions.getExtension('<your-extension-id>')!.exports.secretStorage as vscode.SecretStorage;
-
-    const email = await secretStorage.get('firebase_email');
-    const password = await secretStorage.get('firebase_password');
-
-    if (email && password) {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      return userCredential.user;
-    }
-
-    return null;
-  } catch (error) {
-    console.error("Auto-login failed:", error);
-    return null;
+    await signOut(auth);
+  } catch(error) {
+    console.log("Error loggin out");
   }
 }
 
@@ -95,11 +84,36 @@ export async function postCode(senderId: string, content: string) {
   }
 }
 
+  export async function getUserDetails (uid: any) {
+    try {
+      const userRef = doc(db, "usersList", uid);
+      const doc1 = await getDoc(userRef);
+      if (doc1.exists()) {
+        const userData = doc1.data();
+        return userData;
+      } else {
+        return null;
+      }
+    } catch (error) {
+      return null;
+    }
+  };
+
 export async function shareCode(senderId: string, recipient: string, content: string, type: "code-snippet" | "file" = "code-snippet") {
   try {
+    console.log("recipient", recipient, "sender", senderId);
     const recipientQuery = query(collection(db, "usersList"), where("username", "==", recipient));
     const recipientSnapshot = await getDocs(recipientQuery);
+    const senderDocRef = doc(db, "usersList", recipient, "Chats", senderId);
+    const senderDocSnap = await getDoc(senderDocRef);
+    let senderChat:any;
+      const userData = await getUserDetails(senderDocSnap.id);
 
+    if (senderDocSnap.exists()) {
+      senderChat = { id: senderDocSnap.id, imageUrl: userData?.imageUrl, ...senderDocSnap.data() };
+    } else {
+      console.log("No such document!");
+    }
     if (recipientSnapshot.empty) {
       throw new Error("Recipient not found.");
     }
@@ -150,11 +164,22 @@ export async function shareCode(senderId: string, recipient: string, content: st
         timestamp: serverTimestamp(),
         chat: recipientSnapshot.docs[0].data()
       });
+      const messageData = {
+        id: senderId,
+        text: "",
+        media: content || "",
+        mediaType: type || "text",
+        timestamp: serverTimestamp(),
+        sender: senderId,
+        replyingTo: null,
+        chat: senderChat,
+      };
       // Update chat timestamp
       const chatRef1 = doc(collection(doc(db, "usersList", recipientId), 'Chats'), senderId);
       const chatRef2 = doc(collection(doc(db, "usersList", senderId), 'Chats'), recipientId);
       await updateDoc(chatRef1, { timeStamp: serverTimestamp() });
       await updateDoc(chatRef2, { timeStamp: serverTimestamp() });
+      await sendNotfication(recipient, messageData, senderId);
       return docRef1.id;
     }
 
@@ -162,6 +187,64 @@ export async function shareCode(senderId: string, recipient: string, content: st
   } catch (error) {
     console.error("Error sharing content:", error);
     return false;
+  }
+}
+
+export async function sendNotfication(recipient: string, messageData: any, currentUser: any) {
+  try {
+    const tokendRef = query(collection(doc(db, "usersList", recipient), 'Tokens'));
+    const tokensSnapshot = await getDocs(tokendRef);
+
+    if (tokensSnapshot.empty) {
+      console.log("No tokens found for the recipient.");
+      return;
+    }
+
+    const tokens = tokensSnapshot.docs.map((doc) => doc.data().expoPushToken);
+    console.log("Tokens retrieved:", tokens);
+
+    if (tokens.length === 0) {
+      console.log("No valid tokens found.");
+      return;
+    }
+
+    const messages = tokens.map((token) => ({
+      to: token,
+      sound: "default",
+      title: `${currentUser}`,
+      body: messageData.text
+        ? messageData.text
+        : messageData.mediaType === "image"
+          ? "📷 Image"
+          : messageData.mediaType === "video"
+            ? "🎥 Video"
+            : messageData.mediaType === "doc"
+              ? "📄 Document"
+              : messageData.mediaType === "code"
+                ? "💻 Code Snippet"
+                : "📩 Message",
+      data: { messageData, reciever: recipient },
+    }));
+
+    // Send notifications concurrently
+    await Promise.all(
+      messages.map(async (message) => {
+        const response = await fetch("https://exp.host/--/api/v2/push/send", {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(message),
+        });
+        const data = await response.json();
+        if (data.errors) {
+          console.error("Push Notification Error:", data.errors);
+        }
+      })
+    );
+  } catch (error) {
+    console.error("Error sending push notifications:", error);
   }
 }
 

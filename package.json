@@ -1,18 +1,22 @@
 {
   "name": "mint",
-  "displayName": "mint",
-  "publisher": "mao1729",
-  "description": "",
+  "displayName": "Mint Share",
+  "publisher": "mint1729",
+  "description": "Mint lets you instantly share code and files with your friends directly from VS Code. Integrated with Supabase and Firebase, it's built for developers.",
   "version": "0.0.1",
   "engines": {
     "vscode": "^1.98.0"
   },
   "categories": [
-    "Other"
+    "Other",
+    "Programming Languages",
+    "Source Control"
   ],
   "activationEvents": [
     "onCommand:mint.shareCode",
-    "onCommand:mint.shareFile"
+    "onCommand:mint.shareFile",
+    "onCommand:mint.share",
+    "onCommand:mint.logout"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -24,8 +28,45 @@
       {
         "command": "mint.shareFile",
         "title": "Mint-Share: Share a File"
+      },
+      {
+        "command": "mint.share",
+        "title": "Mint-Share: Share a file in explorer"
+      },
+      {
+        "command": "mint.logout",
+        "title": "Mint-share: Logout"
       }
-    ]
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "mint.shareCode",
+          "when": "editorHasSelection",
+          "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "mint.share",
+          "when": "resourceLangId != ''",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "keywords": [
+    "code sharing",
+    "mint",
+    "developer tools",
+    "snippets",
+    "firebase",
+    "supabase"
+  ],
+  "icon": "icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anumulamadhava2005/mint-vscode-extension"
   },
   "scripts": {
     "vscode:prepublish": "yarn run package",
